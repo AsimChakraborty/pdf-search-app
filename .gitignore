@@ -1,0 +1,10 @@
+rebuild_index.py/*
+fix_search.py/*
+.venv/
+docs/*
+static/*
+database/*
+!database/.gitkeep
+check_db.py/*
+docs.md/*
+test_search2.py/*

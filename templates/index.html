@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Search Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        h1 { color: #333; text-align: center; margin-bottom: 30px; }
+        .upload-section, .search-section, .results, .stats { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .upload-zone { border: 2px dashed #ccc; padding: 40px; text-align: center; border-radius: 8px; cursor: pointer; }
+        .upload-zone:hover { border-color: #4CAF50; background: #f9f9f9; }
+        .upload-zone.dragover { border-color: #4CAF50; background: #e8f5e9; }
+        .upload-zone input[type="file"] { display: none; }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #4CAF50; color: white; }
+        .btn-secondary { background: #2196F3; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .search-box { display: flex; gap: 10px; }
+        .search-box input { flex: 1; padding: 12px 15px; border: 2px solid #ddd; border-radius: 5px; font-size: 16px; }
+        .stats { display: flex; justify-content: space-between; align-items: center; }
+        .stat-item { text-align: center; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #4CAF50; }
+        mark, .highlight { background-color: #ffeb3b; color: #000; padding: 2px 4px; border-radius: 3px; }
+        .result-item { margin-bottom: 15px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+        .result-header { background: #f5f5f5; padding: 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 500; }
+        .result-header:hover { background: #e8e8e8; }
+        .result-body { display: none; padding: 15px; background: white; }
+        .result-body.show { display: block; }
+        .page-result { padding: 10px; margin-bottom: 10px; background: #fafafa; border-radius: 5px; border-left: 3px solid #4CAF50; }
+        .page-result:last-child { margin-bottom: 0; }
+        .page-result div:first-child { font-weight: bold; color: #666; margin-bottom: 5px; }
+        .page-result div:last-child { line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Search Engine</h1>
+        <div class="stats">
+            <div class="stat-item"><div class="stat-number" id="pdfCount">0</div><div class="stat-label">Indexed PDFs</div></div>
+            <div><button class="btn btn-secondary" onclick="loadPdfs()">Refresh</button> <button class="btn btn-danger" onclick="clearAll()">Clear All</button></div>
+        </div>
+        <div class="upload-section">
+            <div class="upload-zone" id="uploadZone"><div>Drag & Drop PDF files here or click to browse</div><input type="file" id="fileInput" multiple accept=".pdf"></div>
+            <div id="uploadStatus"></div>
+        </div>
+        <div class="search-section">
+            <div class="search-box"><input type="text" id="searchInput" placeholder="Search keywords..."><button class="btn btn-primary" onclick="searchPdfs()">Search</button></div>
+        </div>
+        <div class="results" id="results"></div>
+    </div>
+    <script>
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        uploadZone.addEventListener('click', function() { fileInput.click(); });
+        uploadZone.addEventListener('dragover', function(e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', function() { uploadZone.classList.remove('dragover'); });
+        uploadZone.addEventListener('drop', function(e) { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', function(e) { handleFiles(e.target.files); });
+        
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) { formData.append('files[]', files[i]); }
+            const statusDiv = document.getElementById('uploadStatus');
+            statusDiv.innerHTML = '<div>Processing PDFs...</div>';
+            try {
+                const response = await fetch('/api/upload', { method: 'POST', body: formData });
+                const result = await response.json();
+                let msg = '<div class="success">Uploaded ' + result.uploaded.length + ' PDF(s)</div>';
+                if (result.errors.length > 0) msg += '<div class="error">Failed: ' + result.errors.length + '</div>';
+                statusDiv.innerHTML = msg;
+                loadPdfs();
+            } catch (error) { statusDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>'; }
+        }
+        
+        async function loadPdfs() {
+            try {
+                const response = await fetch('/api/pdfs');
+                const data = await response.json();
+                document.getElementById('pdfCount').textContent = data.total;
+            } catch (error) { console.error('Error:', error); }
+        }
+        
+        async function searchPdfs() {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return;
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div>Searching...</div>';
+            try {
+                const response = await fetch('/api/search?q=' + encodeURIComponent(query));
+                const data = await response.json();
+                if (data.results.length === 0) { resultsDiv.innerHTML = '<div>No results found</div>'; return; }
+                let html = '<div>Found in ' + data.total_documents + ' document(s)</div>';
+                data.results.forEach(function(result, index) {
+                    html += '<div class="result-item"><div class="result-header" onclick="toggleResult(' + index + ')">' +
+                        '<span class="result-filename">' + result.filename + '</span>' +
+                        '<span>(' + result.pages.length + ' pages)</span></div>' +
+                        '<div class="result-body" id="result-' + index + '">';
+                    result.pages.forEach(function(page) {
+                        html += '<div class="page-result"><div>Page ' + page.page_number + '</div><div>' + page.snippet + '</div></div>';
+                    });
+                    html += '</div></div>';
+                });
+                resultsDiv.innerHTML = html;
+            } catch (error) { resultsDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>'; }
+        }
+        
+        function toggleResult(index) { document.getElementById('result-' + index).classList.toggle('show'); }
+        
+        async function clearAll() {
+            if (!confirm('Delete all PDFs?')) return;
+            try {
+                const response = await fetch('/api/pdfs');
+                const data = await response.json();
+                for (let i = 0; i < data.pdfs.length; i++) { await fetch('/api/pdf/' + data.pdfs[i].id, { method: 'DELETE' }); }
+                loadPdfs();
+                document.getElementById('results').innerHTML = '<div>Upload PDFs to search</div>';
+            } catch (error) { alert('Error: ' + error.message); }
+        }
+        
+        document.getElementById('searchInput').addEventListener('keypress', function(e) { if (e.key === 'Enter') searchPdfs(); });
+        loadPdfs();
+    </script>
+</body>
+</html>
