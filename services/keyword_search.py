@@ -41,9 +41,9 @@ def search_keyword(query: str, limit: int = 20, match_all: bool = False) -> List
         
         if len(words) == 1:
             where_clause = 'LOWER(content) LIKE ?'
-            params = like_patterns + [limit]
             snippet_query = 'substr(pc.content, INSTR(LOWER(pc.content), ?), 250)'
-            snippet_params = words[0]
+            # snippet_params for INSTR, then like_patterns for WHERE, then limit
+            params = [words[0]] + like_patterns + [limit]
         else:
             if match_all:
                 # AND: all words must match
@@ -67,9 +67,9 @@ def search_keyword(query: str, limit: int = 20, match_all: bool = False) -> List
             LIMIT ?'''
         
         if len(words) == 1:
-            cursor.execute(search_sql, like_patterns + params)
+            cursor.execute(search_sql, params)
         else:
-            cursor.execute(search_sql, [snippet_params] + params)
+            cursor.execute(search_sql, [words[0]] + params)
         
         results = cursor.fetchall()
         

@@ -13,3 +13,20 @@ docs.md
 test_search2.py
 logs/
 !logs/.gitkeep
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Services cache
+services/__pycache__/
