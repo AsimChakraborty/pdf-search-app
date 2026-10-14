@@ -1,20 +1,17 @@
 # Application Configuration
-import os
-from app import app
+# No circular imports - defines paths and settings only
+from pathlib import Path
+
 # Base paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
-DATABASE = os.path.join(BASE_DIR, 'database', 'pdf_index.db')
-CHROMA_DB_PATH = os.path.join(BASE_DIR, 'database', 'chroma_db')
+BASE_DIR = Path(__file__).parent
+UPLOAD_FOLDER = BASE_DIR / 'static' / 'uploads'
+DATABASE = BASE_DIR / 'database' / 'pdf_index.db'
+CHROMA_DB_PATH = BASE_DIR / 'database' / 'chroma_db'
 
 # Create directories
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
-os.makedirs(CHROMA_DB_PATH, exist_ok=True)
-
-# Flask config
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+DATABASE.parent.mkdir(parents=True, exist_ok=True)
+CHROMA_DB_PATH.mkdir(parents=True, exist_ok=True)
 
 # Search config
 DEFAULT_SEARCH_TYPE = 'hybrid'  # keyword, semantic, hybrid
