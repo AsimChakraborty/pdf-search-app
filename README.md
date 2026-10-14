@@ -247,7 +247,7 @@ POST /api/reindex
 1. **No text extracted from PDF**
    - PDF may be scanned/image-based (OCR not supported)
    - PDF may be password protected
-   - Check console for extraction errors
+   - Check logs for extraction errors: `logs/error.log`
 
 2. **Search returns no results**
    - Verify PDF was uploaded: GET /api/pdfs
@@ -261,6 +261,50 @@ POST /api/reindex
 4. **Port 5000 in use**
    - Find process: netstat -ano | findstr :5000
    - Kill it or change port in app.py
+
+## Logging
+
+The application uses Python's built-in `logging` module for structured logging.
+
+### Log Files Location
+```
+logs/
+├── app.log      # All INFO level and above
+└── error.log    # ERROR level only (for troubleshooting)
+```
+
+### Log Format
+```
+2026-10-14 11:53:36 - __main__ - INFO - Search request: query='test', type=hybrid, limit=5
+```
+
+### Log Levels
+- **INFO**: Normal operations (startup, searches, uploads, indexing)
+- **ERROR**: Errors with full stack traces
+
+### What's Logged
+- Application startup/shutdown
+- Search requests (query, type, number of results)
+- File uploads and indexing progress
+- PDF extraction errors
+- ChromaDB operations
+
+### Example Log Entries
+```bash
+# Application startup
+2026-10-14 11:53:20 - __main__ - INFO - Application starting...
+
+# Search request
+2026-10-14 11:53:36 - __main__ - INFO - Search request: query='Bangladesh', type=hybrid, limit=20
+2026-10-14 11:53:36 - __main__ - INFO - Search completed: hybrid found 2 documents for query 'Bangladesh'
+
+# File upload
+2026-10-14 11:54:01 - __main__ - INFO - Upload request: 1 file(s) received
+2026-10-14 11:54:03 - __main__ - INFO - Successfully indexed report.pdf: 25 pages
+
+# Error
+2026-10-14 11:55:00 - services.keyword_search - ERROR - Keyword search error: ... (full traceback)
+```
 
 ### Performance Tips
 
