@@ -108,7 +108,7 @@
         
         async function loadPdfs() {
             try {
-                const response = await fetch('/api/pdfs');
+                const response = await fetch('/api/');
                 const data = await response.json();
                 document.getElementById('pdfCount').textContent = data.total;
             } catch (error) { console.error('Error:', error); }
@@ -146,9 +146,9 @@
         async function clearAll() {
             if (!confirm('Delete all PDFs?')) return;
             try {
-                const response = await fetch('/api/pdfs');
+                const response = await fetch('/api/');
                 const data = await response.json();
-                for (let i = 0; i < data.pdfs.length; i++) { await fetch('/api/pdf/' + data.pdfs[i].id, { method: 'DELETE' }); }
+                for (let i = 0; i < data.pdfs.length; i++) { await fetch('/api/' + data.pdfs[i].id, { method: 'DELETE' }); }
                 loadPdfs();
                 document.getElementById('results').innerHTML = '<div>Upload PDFs to search</div>';
             } catch (error) { alert('Error: ' + error.message); }
