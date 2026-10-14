@@ -1,11 +1,17 @@
-﻿"""PDF Search Application
+"""PDF Search Application
 Supports keyword, semantic, and hybrid search"""
 import os, sqlite3
+import traceback
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 import pdfplumber
 
+# Setup logging
+from services.log_config import get_logger
+logger = get_logger(__name__)
+
 app = Flask(__name__)
+logger.info("Application starting...")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'pdf_index.db')
 CHROMA_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'chroma_db')
@@ -52,7 +58,7 @@ def extract_text_from_pdf(pdf_path):
                     text = improve_text_spacing(text)
                     pages_data.append({'page_number': page_num, 'content': text})
     except Exception as e:
-        print(f'Error extracting PDF: {e}')
+        logger.error(f"Error extracting PDF: {e}")
     return pages_data
 
 def index_pdf(filepath, filename):
@@ -69,7 +75,7 @@ def index_pdf(filepath, filename):
     try:
         index_pdf_to_chroma(pdf_id, filename)
     except Exception as e:
-        print(f'Error indexing to ChromaDB: {e}')
+        logger.error(f"Error indexing to ChromaDB: {e}")
     return len(pages_data)
 
 def get_all_pdfs():
@@ -113,6 +119,9 @@ def upload_files():
         files = request.files.getlist('files[]')
         if not files or files[0].filename == '':
             return jsonify({'error': 'No files selected', 'uploaded': [], 'errors': []}), 400
+        
+        logger.info(f"Upload request: {len(files)} file(s) received")
+        
         results = {'uploaded': [], 'errors': []}
         for file in files:
             if file and allowed_file(file.filename):
@@ -124,18 +133,25 @@ def upload_files():
                     filename = f'{base_name}_{counter}{ext}'
                     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                     counter += 1
+                
+                logger.info(f"Saving file: {filename}")
                 file.save(filepath)
+                
                 try:
                     pages_indexed = index_pdf(filepath, filename)
                     results['uploaded'].append({'filename': filename, 'pages': pages_indexed})
+                    logger.info(f"Successfully indexed {filename}: {pages_indexed} pages")
                 except Exception as e:
-                    print(f'Error indexing {filename}: {e}')
+                    logger.error(f"Error indexing {filename}: {e}", exc_info=True)
                     results['errors'].append({'filename': filename, 'error': str(e)})
                     if os.path.exists(filepath):
                         os.remove(filepath)
             else:
                 results['errors'].append({'filename': file.filename if file else 'unknown', 'error': 'Invalid file type'})
+        
+        logger.info(f"Upload completed: {len(results['uploaded'])} uploaded, {len(results['errors'])} errors")
         return jsonify(results)
+    
     except Exception as e:
         return jsonify({'error': str(e), 'uploaded': [], 'errors': []}), 500
 
@@ -145,8 +161,12 @@ def search():
         query = request.args.get('q', '').strip()
         search_type = request.args.get('type', 'hybrid').lower()
         limit = int(request.args.get('limit', 20))
+        
         if not query:
             return jsonify({'error': 'No search query provided', 'results': [], 'total_documents': 0}), 400
+        
+        logger.info(f"Search request: query='{query}', type={search_type}, limit={limit}")
+        
         if search_type == 'keyword':
             results = search_keyword(query, limit)
         elif search_type == 'semantic':
@@ -155,9 +175,12 @@ def search():
             results = search_hybrid(query, limit)
         else:
             return jsonify({'error': 'Invalid search type. Use: keyword, semantic, or hybrid'}), 400
+        
+        logger.info(f"Search completed: {search_type} found {len(results)} documents for query '{query}'")
         return jsonify({'query': query, 'search_type': search_type, 'results': results, 'total_documents': len(results)})
+    
     except Exception as e:
-        print(f'Search error: {e}'); import traceback; traceback.print_exc()
+        logger.error(f"Search error: {e}", exc_info=True)
         return jsonify({'error': str(e), 'results': [], 'total_documents': 0}), 500
 
 @app.route('/api/search/all', methods=['GET'])

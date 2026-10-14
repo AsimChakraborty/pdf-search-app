@@ -7,6 +7,10 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from typing import Optional
 
+# Setup logging
+from .log_config import get_logger
+logger = get_logger(__name__)
+
 # Model name from docs
 EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
 
@@ -21,9 +25,9 @@ def get_embedding_model() -> SentenceTransformer:
     """
     global _model
     if _model is None:
-        print(f"Loading embedding model: {EMBEDDING_MODEL_NAME}...")
+        logger.info(f"Loading embedding model: {EMBEDDING_MODEL_NAME}...")
         _model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-        print("Embedding model loaded successfully!")
+        logger.info("Embedding model loaded successfully!")
     return _model
 
 

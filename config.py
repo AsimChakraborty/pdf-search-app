@@ -1,6 +1,6 @@
 # Application Configuration
 import os
-
+from app import app
 # Base paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
@@ -14,8 +14,6 @@ os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 
 # Flask config
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max
-app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 
 # Search config

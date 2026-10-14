@@ -6,6 +6,10 @@ import sqlite3
 import re
 from typing import List, Dict, Any
 
+# Setup logging
+from .log_config import get_logger
+logger = get_logger(__name__)
+
 DATABASE = 'database/pdf_index.db'
 
 
@@ -110,7 +114,7 @@ def search_keyword(query: str, limit: int = 20, match_all: bool = False) -> List
         return list(grouped.values())
     
     except Exception as e:
-        print(f'Keyword search error: {e}')
+        logger.error(f"Keyword search error: {e}", exc_info=True)
         return []
     finally:
         conn.close()

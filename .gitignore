@@ -11,3 +11,5 @@ database/
 check_db.py
 docs.md
 test_search2.py
+logs/
+!logs/.gitkeep

@@ -8,6 +8,10 @@ import chromadb
 from typing import List, Dict, Any, Optional
 import numpy as np
 
+# Setup logging
+from .log_config import get_logger
+logger = get_logger(__name__)
+
 from .embedding_service import generate_embedding, generate_embeddings_batch
 
 DATABASE = 'database/pdf_index.db'
@@ -92,7 +96,7 @@ def index_pdf_to_chroma(pdf_id: int, filename: str):
     collection = get_or_create_collection()
     
     # Generate embeddings
-    print(f"Generating embeddings for {len(documents)} pages...")
+    logger.info(f"Generating embeddings for {len(documents)} pages...")
     embeddings = generate_embeddings_batch(documents)
     
     # Add to ChromaDB
@@ -103,7 +107,7 @@ def index_pdf_to_chroma(pdf_id: int, filename: str):
         metadatas=metadatas
     )
     
-    print(f"Indexed {len(pages)} pages to ChromaDB")
+    logger.info(f"Indexed {len(pages)} pages to ChromaDB")
     return len(pages)
 
 
@@ -193,7 +197,7 @@ def delete_pdf_from_chroma(pdf_id: int):
     
     if results['ids']:
         collection.delete(ids=results['ids'])
-        print(f"Deleted {len(results['ids'])} chunks from ChromaDB")
+        logger.info(f"Deleted {len(results['ids'])} chunks from ChromaDB")
 
 
 def rebuild_chroma_index():
@@ -218,5 +222,5 @@ def rebuild_chroma_index():
         count = index_pdf_to_chroma(pdf_id, filename)
         total_pages += count
     
-    print(f"Rebuilt ChromaDB index: {len(pdfs)} PDFs, {total_pages} pages")
+    logger.info(f"Rebuilt ChromaDB index: {len(pdfs)} PDFs, {total_pages} pages")
     return total_pages

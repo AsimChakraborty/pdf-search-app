@@ -6,6 +6,10 @@ import re
 import pdfplumber
 from typing import List, Dict, Any
 
+# Setup logging
+from .log_config import get_logger
+logger = get_logger(__name__)
+
 
 def improve_text_spacing(text: str) -> str:
     """
@@ -55,7 +59,7 @@ def extract_text_from_pdf(pdf_path: str) -> List[Dict[str, Any]]:
                     })
                     
     except Exception as e:
-        print(f'Error extracting PDF {pdf_path}: {e}')
+        logger.error(f"Error extracting PDF {pdf_path}: {e}")
     
     return pages_data
 
