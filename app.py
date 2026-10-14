@@ -1,4 +1,5 @@
-﻿# PDF Search Application
+﻿"""PDF Search Application
+Supports keyword, semantic, and hybrid search"""
 import os, sqlite3
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
@@ -7,21 +8,39 @@ import pdfplumber
 app = Flask(__name__)
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'pdf_index.db')
+CHROMA_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'database', 'chroma_db')
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(os.path.dirname(DATABASE), exist_ok=True)
+os.makedirs(CHROMA_DB_PATH, exist_ok=True)
 
-# Init DB
+# Import services
+from services.keyword_search import search_keyword
+from services.semantic_search import search_semantic, index_pdf_to_chroma, delete_pdf_from_chroma, rebuild_chroma_index
+from services.hybrid_search import search_hybrid, search_all_types
+from services import improve_text_spacing
+
+# Database initialization
 conn = sqlite3.connect(DATABASE)
 cursor = conn.cursor()
-cursor.execute('CREATE TABLE IF NOT EXISTS pdfs (id INTEGER PRIMARY KEY, filename TEXT, filepath TEXT, upload_date TIMESTAMP)')
-cursor.execute('CREATE VIRTUAL TABLE IF NOT EXISTS pdf_content USING fts5(pdf_id, filename, page_number, content, tokenize="porter unicode61")')
+cursor.execute('''CREATE TABLE IF NOT EXISTS pdfs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    filepath TEXT NOT NULL,
+    upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
+cursor.execute('''CREATE TABLE IF NOT EXISTS pdf_content (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pdf_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    page_number INTEGER NOT NULL,
+    content TEXT)''')
 conn.commit()
 conn.close()
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in 'pdf'
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'pdf'
 
 def extract_text_from_pdf(pdf_path):
     pages_data = []
@@ -30,9 +49,10 @@ def extract_text_from_pdf(pdf_path):
             for page_num, page in enumerate(pdf.pages, start=1):
                 text = page.extract_text()
                 if text and text.strip():
+                    text = improve_text_spacing(text)
                     pages_data.append({'page_number': page_num, 'content': text})
     except Exception as e:
-        print(f'Error: {e}')
+        print(f'Error extracting PDF: {e}')
     return pages_data
 
 def index_pdf(filepath, filename):
@@ -46,81 +66,11 @@ def index_pdf(filepath, filename):
             (pdf_id, filename, page['page_number'], page['content']))
     conn.commit()
     conn.close()
-    return len(pages_data)
-
-def search_pdfs(query, limit=1000):
-    conn = sqlite3.connect(DATABASE)
-    cursor = conn.cursor()
-    
-    # Keep original query for highlighting and split into words
-    original_query = query.strip()
-    query_lower = original_query.lower()
-    words = [w.strip() for w in query_lower.split() if w.strip()]
-    
-    if not words:
-        return []
-    
     try:
-        # Build OR query for all words (finds pages with ANY word)
-        like_patterns = [f'%{w}%' for w in words]
-        
-        # Simple query without complex CASE for snippet position
-        if len(words) == 1:
-            # Single word - simple LIKE
-            where_clause = 'LOWER(content) LIKE ?'
-            params = like_patterns + [limit]
-            snippet_query = 'substr(pc.content, INSTR(LOWER(pc.content), ?), 250)'
-            # snippet_params = like_patterns[0]
-            snippet_params = words[0]
-        else:
-            # Multiple words - OR logic
-            conditions = ['LOWER(content) LIKE ?' for _ in words]
-            where_clause = ' OR '.join(conditions)
-            # Use first word for snippet position
-            snippet_query = 'substr(pc.content, INSTR(LOWER(pc.content), ?), 250)'
-            snippet_params = words[0]
-            params = like_patterns + [limit]
-        
-        # Search query
-        search_sql = f'''SELECT p.filename, pc.page_number, pc.content,
-            {snippet_query} as snippet
-            FROM pdf_content pc
-            JOIN pdfs p ON pc.pdf_id = p.id
-            WHERE {where_clause}
-            ORDER BY p.filename, pc.page_number
-            LIMIT ?'''
-        
-        if len(words) == 1:
-            cursor.execute(search_sql, like_patterns + params)
-        else:
-            cursor.execute(search_sql, [snippet_params] + params)
-        
-        results = cursor.fetchall()
-        
-        # Group by filename with unique pages
-        grouped = {}
-        for filename, page_number, content, snippet in results:
-            if filename not in grouped:
-                grouped[filename] = {'filename': filename, 'pages': []}
-            existing_pages = [p['page_number'] for p in grouped[filename]['pages']]
-            if page_number not in existing_pages:
-                # Highlight each word in the snippet
-                marked_snippet = snippet
-                for word in words:
-                    if word:
-                        import re
-                        pattern = re.compile(re.escape(word), re.IGNORECASE)
-                        marked_snippet = pattern.sub(f'<mark>{word}</mark>', marked_snippet)
-                grouped[filename]['pages'].append({'page_number': page_number, 'snippet': marked_snippet})
-        
-        return list(grouped.values())
+        index_pdf_to_chroma(pdf_id, filename)
     except Exception as e:
-        print(f'Search error: {e}')
-        import traceback
-        traceback.print_exc()
-        return []
-    finally:
-        conn.close()
+        print(f'Error indexing to ChromaDB: {e}')
+    return len(pages_data)
 
 def get_all_pdfs():
     conn = sqlite3.connect(DATABASE)
@@ -133,14 +83,18 @@ def get_all_pdfs():
 def delete_pdf(pdf_id):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
-    cursor.execute('SELECT filepath FROM pdfs WHERE id = ?', (pdf_id,))
+    cursor.execute('SELECT filename, filepath FROM pdfs WHERE id = ?', (pdf_id,))
     result = cursor.fetchone()
     if result:
-        filepath = result[0]
+        filename, filepath = result
         cursor.execute('DELETE FROM pdf_content WHERE pdf_id = ?', (pdf_id,))
         cursor.execute('DELETE FROM pdfs WHERE id = ?', (pdf_id,))
         conn.commit()
         conn.close()
+        try:
+            delete_pdf_from_chroma(pdf_id)
+        except:
+            pass
         if os.path.exists(filepath):
             os.remove(filepath)
         return True
@@ -183,20 +137,40 @@ def upload_files():
                 results['errors'].append({'filename': file.filename if file else 'unknown', 'error': 'Invalid file type'})
         return jsonify(results)
     except Exception as e:
-        print(f'Upload error: {e}')
         return jsonify({'error': str(e), 'uploaded': [], 'errors': []}), 500
 
 @app.route('/api/search', methods=['GET'])
 def search():
     try:
         query = request.args.get('q', '').strip()
+        search_type = request.args.get('type', 'hybrid').lower()
+        limit = int(request.args.get('limit', 20))
         if not query:
             return jsonify({'error': 'No search query provided', 'results': [], 'total_documents': 0}), 400
-        results = search_pdfs(query)
-        return jsonify({'query': query, 'results': results, 'total_documents': len(results)})
+        if search_type == 'keyword':
+            results = search_keyword(query, limit)
+        elif search_type == 'semantic':
+            results = search_semantic(query, limit)
+        elif search_type == 'hybrid':
+            results = search_hybrid(query, limit)
+        else:
+            return jsonify({'error': 'Invalid search type. Use: keyword, semantic, or hybrid'}), 400
+        return jsonify({'query': query, 'search_type': search_type, 'results': results, 'total_documents': len(results)})
     except Exception as e:
-        print(f'Search error: {e}')
+        print(f'Search error: {e}'); import traceback; traceback.print_exc()
         return jsonify({'error': str(e), 'results': [], 'total_documents': 0}), 500
+
+@app.route('/api/search/all', methods=['GET'])
+def search_all():
+    try:
+        query = request.args.get('q', '').strip()
+        limit = int(request.args.get('limit', 20))
+        if not query:
+            return jsonify({'error': 'No search query provided'}), 400
+        results = search_all_types(query, limit)
+        return jsonify({'query': query, **results})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/pdfs', methods=['GET'])
 def list_pdfs():
@@ -204,7 +178,6 @@ def list_pdfs():
         pdfs = get_all_pdfs()
         return jsonify({'pdfs': pdfs, 'total': len(pdfs)})
     except Exception as e:
-        print(f'List error: {e}')
         return jsonify({'error': str(e), 'pdfs': [], 'total': 0}), 500
 
 @app.route('/api/pdf/<int:pdf_id>', methods=['DELETE'])
@@ -215,6 +188,14 @@ def delete_pdf_api(pdf_id):
             return jsonify({'message': 'PDF deleted successfully'})
         else:
             return jsonify({'error': 'PDF not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/reindex', methods=['POST'])
+def reindex_all():
+    try:
+        count = rebuild_chroma_index()
+        return jsonify({'message': f'Reindexed {count} pages', 'pages': count})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
