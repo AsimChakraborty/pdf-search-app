@@ -1,12 +1,4 @@
-"""
-PDF Search Application
-Modular design with separated concerns:
-- app.py: Flask app setup and route registration
-- models/: Database operations
-- api/: Flask route handlers
-- services/: Business logic (search, extraction)
-- utils/: Helper functions
-"""
+
 from flask import Flask, render_template, send_from_directory
 
 # Setup logging (must be first)
